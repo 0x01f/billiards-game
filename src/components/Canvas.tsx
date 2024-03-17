@@ -3,19 +3,15 @@ import React, { useEffect, useRef, useState } from "react";
 const Canvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [selectedColor, setSelectedColor] = useState<string>("");
-  const balls: {
-    x: number;
-    y: number;
-    radius: number;
-    color: string;
-    dx: number;
-    dy: number;
-  }[] = [
-    { x: 100, y: 120, radius: 20, color: "red", dx: 0, dy: 0 },
-    { x: 230, y: 190, radius: 25, color: "blue", dx: 0, dy: 0 },
-    { x: 464, y: 260, radius: 30, color: "yellow", dx: 0, dy: 0 },
-  ];
-  let selectedBallIndex: number = -1;
+  const [menuVisible, setMenuVisible] = useState<boolean>(false);
+  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [balls, setBalls] = useState<{ x: number; y: number; radius: number; color: string; dx: number; dy: number; id: number }[]>([
+    { id: 0, x: 100, y: 120, radius: 20, color: "red", dx: 0, dy: 0 },
+    { id: 1, x: 230, y: 190, radius: 25, color: "blue", dx: 0, dy: 0 },
+    { id: 2, x: 464, y: 260, radius: 30, color: "yellow", dx: 0, dy: 0 },
+  ]);
+  let moveSelectedBallIndex: number = -1; // Переменная была изменена здесь
+  const [modeSelectedBallIndex, setModeSelectedBallIndex] = useState<number>(-1);
   let isDragging: boolean = false;
   let prevMouseX: number = 0;
   let prevMouseY: number = 0;
@@ -50,31 +46,67 @@ const Canvas: React.FC = () => {
     });
   };
 
+  const handleBallClick: React.MouseEventHandler<HTMLCanvasElement> = (e) => {
+    e.preventDefault(); // Отменяем стандартное действие браузера для клика
+  
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+  
+    const clickedBallIndex = balls.findIndex((ball) => {
+      const dx = ball.x - mouseX;
+      const dy = ball.y - mouseY;
+      return Math.sqrt(dx * dx + dy * dy) <= ball.radius;
+    });
+  
+    if (clickedBallIndex !== -1) {
+      setModeSelectedBallIndex(clickedBallIndex);
+      setSelectedColor(balls[clickedBallIndex].color)
+      setMenuPosition({ x: mouseX, y: mouseY });
+      setMenuVisible(true);
+    } else {
+      setMenuVisible(false);
+    }
+  };
+
+  const handleCloseMenu = () => {
+    setMenuVisible(false);
+  };
+
+  const handleColorChange = (color: string) => {
+    if (modeSelectedBallIndex !== -1) {
+      const updatedBalls = [...balls];
+      updatedBalls[modeSelectedBallIndex].color = color;
+      setBalls(updatedBalls);
+      redrawCanvas();
+    }
+  };
+
   const onMouseDown = (e: MouseEvent) => {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    selectedBallIndex = balls.findIndex((ball) => {
+    moveSelectedBallIndex = balls.findIndex((ball) => {
       const dx = ball.x - mouseX;
       const dy = ball.y - mouseY;
       return Math.sqrt(dx * dx + dy * dy) <= ball.radius;
     });
 
-    if (selectedBallIndex !== -1) {
+    if (moveSelectedBallIndex !== -1) {
       isDragging = true;
       prevMouseX = mouseX;
       prevMouseY = mouseY;
 
-      // Обнуляем скорость выбранного шара
-      balls[selectedBallIndex].dx = 0;
-      balls[selectedBallIndex].dy = 0;
+      balls[moveSelectedBallIndex].dx = 0;
+      balls[moveSelectedBallIndex].dy = 0;
     }
   };
 
   const onMouseMove = (e: MouseEvent) => {
-    if (isDragging && selectedBallIndex !== -1) {
+    if (isDragging && moveSelectedBallIndex !== -1) {
       const canvas = canvasRef.current!;
       const rect = canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
@@ -83,8 +115,8 @@ const Canvas: React.FC = () => {
       const dx = mouseX - prevMouseX;
       const dy = mouseY - prevMouseY;
 
-      balls[selectedBallIndex].dx = dx / 10; // Установка начальной скорости по x
-      balls[selectedBallIndex].dy = dy / 10; // Установка начальной скорости по y
+      balls[moveSelectedBallIndex].dx = dx / 10;
+      balls[moveSelectedBallIndex].dy = dy / 10;
 
       prevMouseX = mouseX;
       prevMouseY = mouseY;
@@ -95,7 +127,7 @@ const Canvas: React.FC = () => {
 
   const onMouseUp = () => {
     isDragging = false;
-    selectedBallIndex = -1;
+    moveSelectedBallIndex = -1;
   };
 
   const handleBoundaryCollision = (
@@ -111,17 +143,16 @@ const Canvas: React.FC = () => {
   ) => {
     if (ball.dx !== undefined) {
       if (ball.x - ball.radius < 0 || ball.x + ball.radius > canvas.width) {
-        ball.dx *= -0.8; // Уменьшение скорости по x и отражение от края
+        ball.dx *= -0.8;
       }
     }
 
     if (ball.dy !== undefined) {
       if (ball.y - ball.radius < 0 || ball.y + ball.radius > canvas.height) {
-        ball.dy *= -0.8; // Уменьшение скорости по y и отражение от края
+        ball.dy *= -0.8;
       }
     }
 
-    // Перемещение шара обратно в границы канваса, если он вышел за них
     if (ball.x - ball.radius < 0) {
       ball.x = ball.radius;
     } else if (ball.x + ball.radius > canvas.width) {
@@ -138,22 +169,16 @@ const Canvas: React.FC = () => {
   const moveBalls = () => {
     balls.forEach((ball, index) => {
       if (ball.dx !== undefined && ball.dy !== undefined) {
-        // Проверка столкновений со стенками
         handleBoundaryCollision(canvasRef.current!, ball);
-
-        // Проверка столкновений между шарами
         handleBallCollisions(balls, index);
-
-        // Обновление координат и скорости
         ball.x += ball.dx;
         ball.y += ball.dy;
-
-        // Постепенное замедление
-        ball.dx *= 0.99; // Уменьшение скорости по x
-        ball.dy *= 0.99; // Уменьшение скорости по y
+        ball.dx *= 0.99;
+        ball.dy *= 0.99;
       }
     });
   };
+
   const handleBallCollisions = (balls: any[], index: number) => {
     const currentBall = balls[index];
     for (let i = 0; i < balls.length; i++) {
@@ -201,37 +226,28 @@ const Canvas: React.FC = () => {
     requestAnimationFrame(redrawCanvas);
   };
 
-  const handleColorChange = (color: string) => {
-    if (selectedBallIndex !== -1) {
-      balls[selectedBallIndex].color = color;
-      setSelectedColor(color); // Добавляем это
-      redrawCanvas();
-    }
-  };
-
-
   return (
     <div style={{ position: "relative" }}>
-      <canvas ref={canvasRef} width={800} height={400}></canvas>
-      {selectedBallIndex !== -1 && (
+      <canvas ref={canvasRef} width={800} height={400} onClick={handleBallClick}></canvas>
+      {menuVisible && (
         <div
           style={{
             position: "absolute",
-            top: balls[selectedBallIndex].y,
-            left: balls[selectedBallIndex].x,
+            top: menuPosition.y,
+            left: menuPosition.x,
+            border: "1px solid #ccc",
+            backgroundColor: "#fff",
+            padding: "10px",
           }}
         >
-          {/* Заменяем кнопки выпадающим меню */}
-          <select value={selectedColor} onChange={(e) => handleColorChange(e.target.value)}>
-            <option value="red">Red</option>
-            <option value="blue">Blue</option>
-            <option value="yellow">Yellow</option>
-          </select>
+          <button style={{ backgroundColor: "red", marginRight: "5px" }} onClick={() => handleColorChange("red")}>Red</button>
+          <button style={{ backgroundColor: "blue", marginRight: "5px" }} onClick={() => handleColorChange("blue")}>Blue</button>
+          <button style={{ backgroundColor: "yellow", marginRight: "5px" }} onClick={() => handleColorChange("yellow")}>Yellow</button>
+          <button onClick={handleCloseMenu}>Close</button>
         </div>
       )}
     </div>
   );
 };
-
 
 export default Canvas;
